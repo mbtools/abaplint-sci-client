@@ -84,7 +84,7 @@ CLASS zcl_abaplint_deps_find DEFINITION
         zcx_abaplint_error .
     METHODS find_dtel_dependencies
       IMPORTING
-        !iv_name        TYPE tadir-obj_name
+        !is_object      TYPE zif_abapgit_definitions=>ty_tadir
       RETURNING
         VALUE(rt_tadir) TYPE ty_tadir_tt .
     METHODS get_dependencies
@@ -226,7 +226,7 @@ CLASS zcl_abaplint_deps_find IMPLEMENTATION.
           ls_object      TYPE zif_abapgit_definitions=>ty_tadir.
 
     LOOP AT it_senvi INTO ls_senvi.
-      lv_object = ls_senvi-type.
+      lv_object      = ls_senvi-type.
       lv_object_name = ls_senvi-object.
 
       ls_object = convert_type_to_r3tr(
@@ -245,6 +245,7 @@ CLASS zcl_abaplint_deps_find IMPLEMENTATION.
           MESSAGE s004(zabaplint) WITH ls_object-object ls_object-obj_name.
         ENDIF.
       ENDIF.
+
     ENDLOOP.
 
   ENDMETHOD.
@@ -462,6 +463,9 @@ CLASS zcl_abaplint_deps_find IMPLEMENTATION.
       iv_minimal = abap_false
       iv_level   = 1 ).
 
+    " Remove reference to self in case of circular references
+    DELETE mt_results WHERE ref_obj_type = iv_object_type AND ref_obj_name = iv_object_name.
+
     LOOP AT mt_results INTO ls_result.
       APPEND INITIAL LINE TO rt_tadir ASSIGNING <ls_tadir>.
       <ls_tadir>-object = ls_result-ref_obj_type.
@@ -584,7 +588,7 @@ CLASS zcl_abaplint_deps_find IMPLEMENTATION.
     DATA ls_tadir LIKE LINE OF rt_tadir.
     DATA lv_clstype TYPE seoclass-clstype.
 
-    lv_tabname = iv_name.
+    lv_tabname = is_object-obj_name.
 
 * black magic, read the nametab to get the domain for the data element
 * this is faster as it runs only on application server
@@ -616,6 +620,10 @@ CLASS zcl_abaplint_deps_find IMPLEMENTATION.
       ls_tadir-ref_obj_name = ls_x030l-refname.
       INSERT ls_tadir INTO TABLE rt_tadir.
     ENDIF.
+
+    ls_tadir-ref_obj_name = is_object-obj_name.
+    ls_tadir-ref_obj_type = is_object-object.
+    INSERT ls_tadir INTO TABLE rt_tadir.
 
   ENDMETHOD.
 
@@ -840,7 +848,7 @@ CLASS zcl_abaplint_deps_find IMPLEMENTATION.
       ELSEIF is_object-object = 'TABL'.
         lt_tadir = find_tabl_dependencies( is_object-obj_name ).
       ELSEIF is_object-object = 'DTEL'.
-        lt_tadir = find_dtel_dependencies( is_object-obj_name ).
+        lt_tadir = find_dtel_dependencies( is_object ).
       ELSE.
         lt_tadir = get_environment( is_object  = is_object
                                     iv_minimal = iv_minimal ).
@@ -891,8 +899,8 @@ CLASS zcl_abaplint_deps_find IMPLEMENTATION.
 
     " Find dependend objects
     get_dependencies_deep(
-      it_tadir   = lt_tadir
-      iv_level   = iv_level ).
+      it_tadir = lt_tadir
+      iv_level = iv_level ).
 
   ENDMETHOD.
 
@@ -924,7 +932,8 @@ CLASS zcl_abaplint_deps_find IMPLEMENTATION.
 
     DATA:
       lv_obj_type    TYPE euobj-id,
-      lt_environment TYPE senvi_tab.
+      lt_environment TYPE senvi_tab,
+      ls_tadir       LIKE LINE OF rt_tadir.
 
     lv_obj_type = is_object-object.
 
@@ -958,6 +967,10 @@ CLASS zcl_abaplint_deps_find IMPLEMENTATION.
         OR ref_obj_type = 'TRAN'
         OR ref_obj_type = 'MSAG'
         OR ref_obj_type = 'FUGR'.
+    ELSEIF lv_obj_type = 'TTYP' OR lv_obj_type = 'DOMA'.
+      ls_tadir-ref_obj_name = is_object-obj_name.
+      ls_tadir-ref_obj_type = is_object-object.
+      INSERT ls_tadir INTO TABLE rt_tadir.
     ENDIF.
 
   ENDMETHOD.
